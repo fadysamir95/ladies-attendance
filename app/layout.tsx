@@ -11,6 +11,9 @@ const cairo = Cairo({
 
 export const metadata: Metadata = {
   title: "اجتماع السيدات",
+  icons: {
+    icon: "/favicon.png",
+  },
 };
 
 export default function RootLayout({
