@@ -153,3 +153,13 @@
 .home-box:focus-visible {
   outline: 3px solid #15275555;
 }
+
+.edit {
+  width: 85% !important;
+}
+
+@media (max-width: 768px) {
+  .edit {
+    width: 92% !important;
+  }
+}

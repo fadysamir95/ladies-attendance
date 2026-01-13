@@ -457,6 +457,7 @@ export default function WomenPage() {
                         onChange={(e) => setEditCode(e.target.value)}
                         style={styles.inlineInput}
                         inputMode="numeric"
+                        className="edit"
                       />
                     )}
                   </div>
@@ -470,6 +471,7 @@ export default function WomenPage() {
                         value={editName}
                         onChange={(e) => setEditName(e.target.value)}
                         style={styles.inlineInput}
+                        className="edit"
                       />
                     )}
                   </div>

@@ -44,6 +44,8 @@ export default function SessionPage() {
   const [records, setRecords] = useState<Record<string, PresentRecord>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 50;
 
   const attRef = useMemo(() => doc(db, "attendance", weekKey), [weekKey]);
 
@@ -58,7 +60,6 @@ export default function SessionPage() {
         (d) => ({ id: d.id, ...d.data() } as Woman)
       );
 
-      // ترتيب دائم حسب الرقم
       list.sort((a, b) => (a.code ?? 0) - (b.code ?? 0));
       setWomen(list);
 
@@ -90,6 +91,25 @@ export default function SessionPage() {
     });
   }, [women, search]);
 
+  const isSearching = search.trim().length > 0;
+
+  const totalPages = useMemo(() => {
+    if (isSearching) return 1;
+    return Math.max(1, Math.ceil(filteredWomen.length / PAGE_SIZE));
+  }, [filteredWomen.length, isSearching]);
+
+  const currentPage = Math.min(page, totalPages);
+
+  const pageItems = useMemo(() => {
+    if (isSearching) return filteredWomen;
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filteredWomen.slice(start, start + PAGE_SIZE);
+  }, [filteredWomen, currentPage, isSearching]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search]);
+
   async function markPresent(womanId: string) {
     setRecords((prev) => ({
       ...prev,
@@ -118,7 +138,7 @@ export default function SessionPage() {
   if (loading) return <div style={{ padding: 20 }}>تحميل...</div>;
 
   const total = women.length;
-  const shown = filteredWomen.length;
+  const shown = pageItems.length;
   const presentCount = Object.keys(records || {}).length;
 
   return (
@@ -162,6 +182,33 @@ export default function SessionPage() {
           </div>
         </div>
 
+                {/* Pagination (only when search is empty) */}
+        {!isSearching && filteredWomen.length > PAGE_SIZE && (
+          <div style={s.paginationRow}>
+            <button
+              type="button"
+              style={{ ...s.pageBtn, ...(currentPage <= 1 ? s.pageBtnDisabled : {}) }}
+              disabled={currentPage <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              السابق
+            </button>
+
+            <div style={s.pageInfo}>
+              صفحة <b>{currentPage}</b> / <b>{totalPages}</b>
+            </div>
+
+            <button
+              type="button"
+              style={{ ...s.pageBtn, ...(currentPage >= totalPages ? s.pageBtnDisabled : {}) }}
+              disabled={currentPage >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
+              التالي
+            </button>
+          </div>
+        )}
+
         {/* List */}
         <div style={{ ...s.card, marginTop: 12 }}>
           <div style={s.listHeader} className="sessionListHeader">
@@ -173,7 +220,7 @@ export default function SessionPage() {
           {shown === 0 ? (
             <div style={s.empty}>لا توجد نتائج مطابقة.</div>
           ) : (
-            filteredWomen.map((w) => {
+            pageItems.map((w) => {
               const isPresent = !!records[w.id];
 
               return (
@@ -427,4 +474,33 @@ const s: Record<string, React.CSSProperties> = {
 
   empty: { padding: 14, opacity: 0.75 },
   note: { marginTop: 12, opacity: 0.7, fontSize: 13 },
+    paginationRow: {
+    marginTop: 12,
+    display: "flex",
+    gap: 10,
+    alignItems: "center",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+  },
+
+  pageBtn: {
+    padding: "10px 14px",
+    borderRadius: 999,
+    border: "1px solid #ddd",
+    background: "white",
+    cursor: "pointer",
+    fontWeight: 900,
+    fontFamily: "cairo",
+    transition: "all 180ms ease",
+  },
+
+  pageBtnDisabled: {
+    opacity: 0.5,
+    cursor: "not-allowed",
+  },
+
+  pageInfo: {
+    opacity: 0.75,
+    fontFamily: "cairo",
+  },
 };
