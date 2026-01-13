@@ -76,8 +76,8 @@ export default function LoginPage() {
   return (
     <div dir="rtl" style={s.page}>
       <div style={s.card}>
-        <div style={s.brand}><img src="/logo.png" alt="اجتماع السيدات" width="auto" height={110} /></div>
-        {/* <h1 style={s.title}>تسجيل الدخول</h1> */}
+        {/* <div style={s.brand}><img src="/logo.png" alt="اجتماع السيدات" width="auto" height={110} /></div> */}
+        <h1 style={s.title}>تسجيل الدخول</h1>
 
         <form onSubmit={handleLogin} style={s.form}>
           <div>
