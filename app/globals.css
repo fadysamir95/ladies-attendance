@@ -1,31 +1,155 @@
-@import "tailwindcss";
+/* Header responsive tweaks */
+@media (max-width: 900px) {
+  .hdrNav {
+    justify-content: flex-start !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 6px;
+  }
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-  --primary: #152755;
-}
+  .hdrNav::-webkit-scrollbar {
+    height: 6px;
+  }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  .hdrNav::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 999px;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: 'Cairo' !important;
+@media (max-width: 520px) {
+  .hdrTop {
+    gap: 8px;
+  }
 }
 
-* {
-  font-family: 'Cairo' !important;
+/* Session page responsive */
+@media (max-width: 720px) {
+  .sessionListHeader {
+    grid-template-columns: 1fr 100px !important;
+  }
+  /* hide the "إجراء" header on mobile */
+  .sessionListHeader > :nth-child(3) {
+    display: none !important;
+  }
+
+  .sessionRow {
+    grid-template-columns: 1fr 100px !important;
+    gap: 8px !important;
+  }
+
+  /* move action button under the name */
+  .sessionRow > :nth-child(3) {
+    grid-column: 1 / -1;
+    text-align: right !important;
+  }
+
+  /* make buttons full width for easier tapping */
+  .sessionRow button {
+    width: 100%;
+  }
 }
 
-button,
-input,
-select,
-textarea {
-  font-family: 'Cairo' !important;
+@media (max-width: 420px) {
+  /* smaller pills/text on very small phones */
+  .sessionRow .codePill {
+    min-width: 38px;
+    padding: 5px 8px;
+  }
+}
+
+/* ========== Women page responsive ========== */
+
+@media (max-width: 900px) {
+  /* Add + Import cards stack */
+  .womenTopRow > div {
+    min-width: unset !important;
+    flex: unset !important;
+  }
+
+  .womenTopRow form div {
+    flex: unset !important;
+    width: 90% !important;
+  }
+
+  /* Tools row stack nicely */
+  .womenToolsRow {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  .womenToolsRow > div {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .womenToolsRow select {
+    width: 100% !important;
+  }
+}
+
+@media (max-width: 720px) {
+  /* Hide list header on mobile */
+  .womenListHeader {
+    display: none !important;
+  }
+
+  /* Turn each row into a card layout */
+  .womenRow {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+    padding: 12px !important;
+    border: 1px solid #eee !important;
+    border-radius: 14px !important;
+    margin: 10px 0 !important;
+    background: #fff !important;
+  }
+
+  /* Make actions full width and nicer on mobile */
+  .womenRow > :nth-child(4) {
+    display: flex !important;
+    gap: 8px !important;
+  }
+
+  .womenRow button {
+    flex: 1;
+    width: 100%;
+  }
+
+  /* Inputs full width */
+  input, select {
+    width: 90% !important;
+  }
+}
+
+@media (max-width: 420px) {
+  /* Reduce paddings on small phones */
+  .womenRow {
+    padding: 10px !important;
+  }
+}
+
+.logout:hover, .logout:active, .logout:focus {
+  background: rgb(17, 24, 39) !important;
+  border-color: rgb(17, 24, 39) !important;
+  color: #fff !important;
+}
+
+/* Home boxes animation */
+.home-box {
+  transition: all 0.35s ease;
+  transform: translateY(0) scale(1);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+
+.home-box:hover {
+  transform: translateY(-6px) scale(1.02);
+  box-shadow: 0 12px 30px rgba(0,0,0,0.12);
+  border-color: #152755;
+}
+
+/* nice focus for keyboard users */
+.home-box:focus-visible {
+  outline: 3px solid #15275555;
 }

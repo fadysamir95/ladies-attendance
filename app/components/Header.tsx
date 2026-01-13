@@ -25,7 +25,6 @@ export default function Header() {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
 
-    // مراقبة حالة تسجيل الدخول
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, (u) => {
             setUser(u);
@@ -42,100 +41,115 @@ export default function Header() {
         router.push("/login");
     }
 
-    // لو لسه بيحمّل حالة المستخدم
     if (loading) return null;
 
-    // لو مش مسجل دخول → مفيش هيدر أصلاً
     if (!user) return null;
 
     return (
         <header style={s.header} dir="rtl">
-            <div style={s.wrap}>
-                <img src="/logo.png" alt="اجتماع السيدات" height={70} />
+        <div className="hdrWrap" style={s.wrap}>
+            <div className="hdrTop" style={s.topRow}>
 
-                <nav style={s.nav}>
-                    {links.map((l) => {
-                        const active = isActivePath(pathname, l.href);
-                        return (
-                            <Link
-                                key={l.href}
-                                href={l.href}
-                                style={{
-                                    ...s.link,
-                                    ...(active ? s.linkActive : {}),
-                                }}
-                                onMouseEnter={(e) => {
-                                    if (!active) {
-                                    Object.assign(e.currentTarget.style, s.linkHover);
-                                    }
-                                }}
-                                onMouseLeave={(e) => {
-                                    Object.assign(
-                                    e.currentTarget.style,
-                                    active ? s.linkActive : s.link
-                                    );
-                                }}
-                                >
-                                {l.label}
-                            </Link>
-                        );
-                    })}
-                </nav>
+            <Link href="/">
+                <img
+                    src="/logo.png"
+                    alt="اجتماع السيدات"
+                    height={60}
+                    style={s.logo}
+                />
+            </Link>
 
-                <button onClick={logout} style={s.logout}>
-                    تسجيل الخروج
-                </button>
+            <button onClick={logout} style={s.logout} className="logout">
+                تسجيل الخروج
+            </button>
+            </div>
+
+            <nav className="hdrNav" style={s.nav}>
+            {links.map((l) => {
+                const active = isActivePath(pathname, l.href);
+                return (
+                <Link
+                    key={l.href}
+                    href={l.href}
+                    style={{ ...s.link, ...(active ? s.linkActive : {}) }}
+                    onMouseEnter={(e) => {
+                    if (!active) Object.assign(e.currentTarget.style, s.linkHover);
+                    }}
+                    onMouseLeave={(e) => {
+                    Object.assign(e.currentTarget.style, active ? s.linkActive : s.link);
+                    }}
+                >
+                    {l.label}
+                </Link>
+                );
+            })}
+            </nav>
             </div>
         </header>
     );
 }
 
 const s: Record<string, React.CSSProperties> = {
-    header: {
-        position: "sticky",
-        top: 0,
-        zIndex: 50,
-        background: "white",
-        borderBottom: "1px solid #eee",
-    },
-    wrap: {
-        maxWidth: 1100,
-        margin: "0 auto",
-        padding: "12px 16px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 12,
-        flexWrap: "wrap",
-    },
-    nav: { display: "flex", gap: 8, flexWrap: "wrap" },
-    link: {
-        textDecoration: "none",
-        color: "#111827",
-        padding: "8px 14px",
-        borderRadius: 12,
-        fontWeight: 800,
-        transition: "all 0.25s ease",
-        border: "1px solid transparent",
-        background: "transparent",
-    },
-    linkActive: {
-        background: "#111827",
-        color: "white",
-        border: "1px solid #111827",
-    },
-    linkHover: {
-        background: "#f3f4f6",
-        border: "1px solid #e5e7eb",
-        transform: "scale(1.05)",
-    },
-    logout: {
-        padding: "8px 12px",
-        borderRadius: 10,
-        border: "1px solid #ddd",
-        background: "white",
-        cursor: "pointer",
-        fontWeight: 900,
-        fontFamily: "cairo",
-    },
+  header: {
+    position: "sticky",
+    top: 0,
+    zIndex: 50,
+    background: "white",
+    borderBottom: "1px solid #eee",
+  },
+  wrap: {
+    maxWidth: 1100,
+    margin: "0 auto",
+    padding: "10px 16px",
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  },
+  topRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  logo: { display: "block", cursor: "pointer", },
+
+  nav: {
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  link: {
+    textDecoration: "none",
+    color: "#111827",
+    padding: "8px 14px",
+    borderRadius: 12,
+    fontWeight: 800,
+    transition: "all 0.25s ease",
+    border: "1px solid transparent",
+    background: "transparent",
+    whiteSpace: "nowrap",
+  },
+  linkActive: {
+    background: "#111827",
+    color: "white",
+    border: "1px solid #111827",
+  },
+  linkHover: {
+    background: "#f3f4f6",
+    border: "1px solid #e5e7eb",
+    transform: "scale(1.05)",
+  },
+  logout: {
+    padding: "8px 12px",
+    borderRadius: 10,
+    border: "1px solid #ddd",
+    background: "white",
+    cursor: "pointer",
+    fontWeight: 900,
+    fontFamily: "cairo",
+    whiteSpace: "nowrap",
+  },
 };

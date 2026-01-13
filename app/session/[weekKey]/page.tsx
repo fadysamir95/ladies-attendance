@@ -164,7 +164,7 @@ export default function SessionPage() {
 
         {/* List */}
         <div style={{ ...s.card, marginTop: 12 }}>
-          <div style={s.listHeader}>
+          <div style={s.listHeader} className="sessionListHeader">
             <div style={{ fontWeight: 900 }}>السيدة</div>
             <div style={{ fontWeight: 900, textAlign: "left" }}>الحالة</div>
             <div style={{ fontWeight: 900, textAlign: "left" }}>إجراء</div>
@@ -179,6 +179,7 @@ export default function SessionPage() {
               return (
                 <div
                   key={w.id}
+                  className={`sessionRow ${isPresent ? "present" : ""}`}
                   style={{
                     ...s.row,
                     ...(isPresent ? s.rowPresent : {}),
@@ -312,7 +313,7 @@ const s: Record<string, React.CSSProperties> = {
     fontFamily: "cairo",
   },
   input: {
-    width: "98%",
+    width: "85%",
     padding: "10px 12px",
     borderRadius: 12,
     border: "1px solid #ddd",

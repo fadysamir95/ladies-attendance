@@ -4,7 +4,6 @@ import type { NextRequest } from "next/server";
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // صفحات مسموح بها بدون تسجيل
   if (
     pathname.startsWith("/login") ||
     pathname.startsWith("/_next") ||
@@ -15,7 +14,6 @@ export function middleware(req: NextRequest) {
 
   const authCookie = req.cookies.get("auth")?.value;
 
-  // لو مش مسجل دخول -> حوله للّوجين
   if (!authCookie) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
@@ -25,7 +23,6 @@ export function middleware(req: NextRequest) {
   return NextResponse.next();
 }
 
-// حدد المسارات التي يطبق عليها
 export const config = {
   matcher: ["/((?!api).*)"],
 };

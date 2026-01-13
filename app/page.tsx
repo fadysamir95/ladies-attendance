@@ -26,10 +26,9 @@ export default function Home() {
 
       <div style={s.grid}>
         {items.map((it) => (
-          <Link key={it.href} href={it.href} style={s.card}>
+          <Link key={it.href} href={it.href} style={s.card} className="home-box">
             <div style={s.cardTitle}>{it.title}</div>
             <div style={s.cardDesc}>{it.desc}</div>
-            <div style={s.cardGo}>فتح ←</div>
           </Link>
         ))}
       </div>
@@ -46,7 +45,7 @@ const s: Record<string, React.CSSProperties> = {
   p: { margin: "0 0 14px", opacity: 0.75 },
   grid: {
     display: "grid",
-    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
     gap: 14,
   },
   card: {

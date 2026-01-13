@@ -172,7 +172,6 @@ export default function WomenPage() {
     if (!c) return alert("من فضلك أدخل رقم صحيح.");
     if (!nm) return alert("من فضلك أدخل الاسم.");
 
-    // منع تكرار الرقم (باستثناء نفس السيدة)
     if (women.some((x) => x.id !== w.id && x.code === c)) {
       return alert("هذا الرقم مستخدم بالفعل. اختر رقمًا آخر.");
     }
@@ -283,14 +282,13 @@ export default function WomenPage() {
         </div>
 
         {/* Add + Import Row */}
-        <div style={{ display: "flex", gap: 12, marginTop: 12, flexWrap: "wrap" }}>
+        <div className="womenTopRow" style={{ display: "flex", gap: 12, marginTop: 12, flexWrap: "wrap" }}>
           
-          {/* إضافة سيدة */}
           <div style={{ ...styles.card, flex: 1, minWidth: 320 }}>
             <div style={styles.sectionTitle}>إضافة سيدة</div>
 
             <form onSubmit={addWoman} style={{ ...styles.addRow, marginTop: 10 }}>
-              <div style={{ width: 180 }}>
+              <div style={{ width: "48%" }}>
                 <label style={styles.label}>الرقم</label>
                 <input
                   value={code}
@@ -301,7 +299,7 @@ export default function WomenPage() {
                 />
               </div>
 
-              <div style={{ flex: 1 }}>
+              <div style={{ width: "48%" }}>
                 <label style={styles.label}>اسم السيدة</label>
                 <input
                   value={name}
@@ -359,7 +357,7 @@ export default function WomenPage() {
 
         {/* Search + Filters */}
         <div style={{ ...styles.card, marginTop: 12 }}>
-          <div style={styles.toolsRow}>
+          <div className="womenToolsRow" style={styles.toolsRow}>
             <div style={{ flex: 1 }}>
               <label style={styles.label}>بحث (اسم أو رقم)</label>
               <input
@@ -432,7 +430,7 @@ export default function WomenPage() {
 
         {/* List */}
         <div style={{ ...styles.card, marginTop: 12 }}>
-          <div style={styles.listHeader}>
+          <div className="womenListHeader" style={styles.listHeader}>
             <div style={{ fontWeight: 800 }}>الرقم</div>
             <div style={{ fontWeight: 800 }}>الاسم</div>
             <div style={{ fontWeight: 800 }}>الحالة</div>
@@ -448,7 +446,7 @@ export default function WomenPage() {
               const isEditing = editingId === w.id;
 
               return (
-                <div key={w.id} style={styles.row}>
+                <div key={w.id} className="womenRow" style={styles.row}>
                   {/* code */}
                   <div style={styles.codeCell}>
                     {!isEditing ? (
@@ -590,7 +588,7 @@ const styles: Record<string, React.CSSProperties> = {
   label: { display: "block", fontSize: 12, opacity: 0.75, marginBottom: 6 },
 
   input: {
-    width: "80%",
+    width: "90%",
     padding: "10px 12px",
     borderRadius: 12,
     border: "1px solid #ddd",
@@ -600,7 +598,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   inlineInput: {
-    width: "25%",
+    width: "100%",
     padding: "8px 10px",
     borderRadius: 10,
     border: "1px solid #ddd",
