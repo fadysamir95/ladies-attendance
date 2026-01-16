@@ -15,7 +15,6 @@ export default function LoginPage() {
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // لو المستخدم بالفعل مسجل دخول → روّحه للهوم
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
       if (user) {
@@ -42,7 +41,6 @@ export default function LoginPage() {
       setLoading(true);
       await signInWithEmailAndPassword(auth, eTrim, password);
 
-      // ✅ Cookie بسيطة لحماية الـ routes via middleware
       document.cookie = "auth=1; path=/";
 
       router.replace("/");
@@ -76,7 +74,6 @@ export default function LoginPage() {
   return (
     <div dir="rtl" style={s.page}>
       <div style={s.card}>
-        {/* <div style={s.brand}><img src="/logo.png" alt="اجتماع السيدات" width="auto" height={110} /></div> */}
         <h1 style={s.title}>تسجيل الدخول</h1>
 
         <form onSubmit={handleLogin} style={s.form}>

@@ -94,6 +94,47 @@ export default function WomenPage() {
     return { total, active, inactive };
   }, [women]);
 
+  const gaps = useMemo(() => {
+    const codes = women
+      .map((w) => Number(w.code))
+      .filter((n) => Number.isFinite(n) && n > 0)
+      .sort((a, b) => a - b);
+
+    if (codes.length === 0) {
+      return {
+        first: null as number | null,
+        last: null as number | null,
+        missing: [] as number[],
+        ranges: [] as Array<{ from: number; to: number }>,
+      };
+    }
+
+    const first = codes[0];
+    const last = codes[codes.length - 1];
+
+    const set = new Set(codes);
+
+    const missing: number[] = [];
+    for (let n = first; n <= last; n++) {
+      if (!set.has(n)) missing.push(n);
+    }
+
+    const ranges: Array<{ from: number; to: number }> = [];
+    for (let i = 0; i < missing.length; i++) {
+      const start = missing[i];
+      let end = start;
+
+      while (i + 1 < missing.length && missing[i + 1] === end + 1) {
+        i++;
+        end = missing[i];
+      }
+
+      ranges.push({ from: start, to: end });
+    }
+
+    return { first, last, missing, ranges };
+  }, [women]);
+
   const filtered = useMemo(() => {
     const q = normalizeArabic(search);
     const qNum = String(search || "").trim(); // للبحث بالرقم
@@ -119,6 +160,33 @@ export default function WomenPage() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, totalPages);
 
+  function buildPageItems(current: number, total: number) {
+    const items: Array<number | "..."> = [];
+    if (total <= 7) {
+      for (let i = 1; i <= total; i++) items.push(i);
+      return items;
+    }
+
+    items.push(1);
+
+    const left = Math.max(2, current - 2);
+    const right = Math.min(total - 1, current + 2);
+
+    if (left > 2) items.push("...");
+
+    for (let i = left; i <= right; i++) items.push(i);
+
+    if (right < total - 1) items.push("...");
+
+    items.push(total);
+    return items;
+  }
+
+  const pageButtons = useMemo(
+    () => buildPageItems(currentPage, totalPages),
+    [currentPage, totalPages]
+  );
+
   const pageItems = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
     return filtered.slice(start, start + pageSize);
@@ -132,7 +200,6 @@ export default function WomenPage() {
     if (!c) return alert("من فضلك أدخل رقم صحيح (أكبر من صفر).");
     if (!nm) return alert("من فضلك أدخل الاسم.");
 
-    // منع تكرار الرقم (محليًا)
     if (women.some((w) => w.code === c)) {
       return alert("هذا الرقم مستخدم بالفعل. اختر رقمًا آخر.");
     }
@@ -200,10 +267,7 @@ export default function WomenPage() {
       complete: async (results) => {
         try {
           const rows = results.data || [];
-
-          // الموجود حاليًا لمنع تكرار الأكواد
           const existingCodes = new Set(women.map((w) => w.code));
-
           const cleaned = rows
             .map((r) => {
               const c = parseCode(r.code);
@@ -215,10 +279,10 @@ export default function WomenPage() {
               return { code: c, name: nm, active };
             })
             .filter((r) => r.code && r.name.length > 0) as Array<{
-            code: number;
-            name: string;
-            active: boolean;
-          }>;
+              code: number;
+              name: string;
+              active: boolean;
+            }>;
 
           const toAdd: Array<{ code: number; name: string; active: boolean }> = [];
           const seenInFile = new Set<number>();
@@ -270,7 +334,7 @@ export default function WomenPage() {
           <div>
             <h1 style={styles.title}>ادارة السيدات</h1>
             <p style={styles.subTitle}>
-             كنيسة الشهيد العظيم مارجرجش بالجيوشي - شبرا مصر
+              كنيسة الشهيد العظيم مارجرجس بالجيوشي - شبرا مصر
             </p>
           </div>
 
@@ -281,9 +345,37 @@ export default function WomenPage() {
           </div>
         </div>
 
+        {/* Missing codes card */}
+        <div style={{ ...styles.card, marginTop: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <div style={{ marginTop: 10, opacity: 0.85, fontWeight: 800 }}>الأرقام التى لم تسجل حتى رقم <span>{gaps.last}</span>: <b>{gaps.missing.length} ارقام</b></div>
+            </div>
+          </div>
+
+          {gaps.first === null ? (
+            <div style={{ marginTop: 10, opacity: 0.75 }}>لا توجد أرقام بعد.</div>
+          ) : gaps.missing.length === 0 ? (
+            <div style={{ marginTop: 10, ...styles.okBox }}>✅ ممتاز — لا توجد أرقام مفقودة بين {gaps.first} و {gaps.last}.</div>
+          ) : (
+            <>
+              <div style={styles.gapsWrap}>
+                {gaps.ranges.map((r, idx) => {
+                  const text = r.from === r.to ? String(r.from) : `${r.from} - ${r.to}`;
+                  return (
+                    <span key={idx} style={styles.gapChip}>
+                      {text}
+                    </span>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+
         {/* Add + Import Row */}
         <div className="womenTopRow" style={{ display: "flex", gap: 12, marginTop: 12, flexWrap: "wrap" }}>
-          
+
           <div style={{ ...styles.card, flex: 1, minWidth: 320 }}>
             <div style={styles.sectionTitle}>إضافة سيدة</div>
 
@@ -407,25 +499,69 @@ export default function WomenPage() {
             النتائج: <b>{filtered.length}</b> | الصفحة: <b>{currentPage}</b> / <b>{totalPages}</b>
           </div>
 
-          <div style={styles.pagination}>
-            <button
-              type="button"
-              style={styles.pageBtn}
-              disabled={currentPage <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              السابق
-            </button>
+          {totalPages > 1 && (
+            <div style={styles.pagination}>
+              {/* first */}
+              <button
+                type="button"
+                style={{ ...styles.pageBtn, ...(currentPage === 1 ? styles.pageBtnDisabled : {}) }}
+                disabled={currentPage === 1}
+                onClick={() => setPage(1)}
+                title="الأول"
+              >
+                ⏭
+              </button>
 
-            <button
-              type="button"
-              style={styles.pageBtn}
-              disabled={currentPage >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            >
-              التالي
-            </button>
-          </div>
+              {/* prev */}
+              <button
+                type="button"
+                style={{ ...styles.pageBtn, ...(currentPage === 1 ? styles.pageBtnDisabled : {}) }}
+                disabled={currentPage === 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                السابق
+              </button>
+
+              {/* numbers */}
+              <div style={styles.pageNumbers}>
+                {pageButtons.map((it, idx) =>
+                  it === "..." ? (
+                    <span key={`dots-${idx}`} style={styles.pageDots}>…</span>
+                  ) : (
+                    <button
+                      key={it}
+                      type="button"
+                      onClick={() => setPage(it)}
+                      style={{ ...styles.pageNumBtn, ...(it === currentPage ? styles.pageNumBtnActive : {}) }}
+                    >
+                      {it}
+                    </button>
+                  )
+                )}
+              </div>
+
+              {/* next */}
+              <button
+                type="button"
+                style={{ ...styles.pageBtn, ...(currentPage === totalPages ? styles.pageBtnDisabled : {}) }}
+                disabled={currentPage === totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                التالي
+              </button>
+
+              {/* last */}
+              <button
+                type="button"
+                style={{ ...styles.pageBtn, ...(currentPage === totalPages ? styles.pageBtnDisabled : {}) }}
+                disabled={currentPage === totalPages}
+                onClick={() => setPage(totalPages)}
+                title="الأخير"
+              >
+                ⏮
+              </button>
+            </div>
+          )}
         </div>
 
         {/* List */}
@@ -519,6 +655,70 @@ export default function WomenPage() {
             })
           )}
         </div>
+
+        {totalPages > 1 && (
+          <div style={styles.pagination}>
+            {/* first */}
+            <button
+              type="button"
+              style={{ ...styles.pageBtn, ...(currentPage === 1 ? styles.pageBtnDisabled : {}) }}
+              disabled={currentPage === 1}
+              onClick={() => setPage(1)}
+              title="الأول"
+            >
+              ⏭
+            </button>
+
+            {/* prev */}
+            <button
+              type="button"
+              style={{ ...styles.pageBtn, ...(currentPage === 1 ? styles.pageBtnDisabled : {}) }}
+              disabled={currentPage === 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              السابق
+            </button>
+
+            {/* numbers */}
+            <div style={styles.pageNumbers}>
+              {pageButtons.map((it, idx) =>
+                it === "..." ? (
+                  <span key={`dots-${idx}`} style={styles.pageDots}>…</span>
+                ) : (
+                  <button
+                    key={it}
+                    type="button"
+                    onClick={() => setPage(it)}
+                    style={{ ...styles.pageNumBtn, ...(it === currentPage ? styles.pageNumBtnActive : {}) }}
+                  >
+                    {it}
+                  </button>
+                )
+              )}
+            </div>
+
+            {/* next */}
+            <button
+              type="button"
+              style={{ ...styles.pageBtn, ...(currentPage === totalPages ? styles.pageBtnDisabled : {}) }}
+              disabled={currentPage === totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
+              التالي
+            </button>
+
+            {/* last */}
+            <button
+              type="button"
+              style={{ ...styles.pageBtn, ...(currentPage === totalPages ? styles.pageBtnDisabled : {}) }}
+              disabled={currentPage === totalPages}
+              onClick={() => setPage(totalPages)}
+              title="الأخير"
+            >
+              ⏮
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -690,7 +890,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 900,
     fontFamily: "cairo",
   },
-
   chips: { display: "flex", gap: 8, flexWrap: "wrap" },
   chip: {
     padding: "8px 10px",
@@ -703,20 +902,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: "cairo",
   },
   chipActive: { background: "#111827", color: "white", border: "1px solid #111827" },
-
   smallNote: { marginTop: 10, opacity: 0.75, fontSize: 13 },
-
-  pagination: { marginTop: 10, display: "flex", gap: 8 },
-  pageBtn: {
-    padding: "8px 12px",
-    borderRadius: 12,
-    border: "1px solid #ddd",
-    background: "white",
-    cursor: "pointer",
-    fontWeight: 900,
-    fontFamily: "cairo",
-  },
-
   listHeader: {
     display: "grid",
     gridTemplateColumns: "120px 1fr 120px 320px",
@@ -758,7 +944,103 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     fontWeight: 900,
   },
-
   loading: { padding: 16, opacity: 0.7 },
   empty: { padding: 16, opacity: 0.7 },
+  gapPill: {
+    background: "#f3f4f6",
+    border: "1px solid #e5e7eb",
+    borderRadius: 999,
+    padding: "8px 12px",
+    fontWeight: 900,
+    fontFamily: "cairo",
+  },
+
+  gapPillWarn: {
+    background: "#fff7ed",
+    border: "1px solid #fed7aa",
+    color: "#9a3412",
+  },
+
+  gapsWrap: {
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+    marginTop: 8,
+  },
+
+  gapChip: {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "6px 10px",
+    borderRadius: 999,
+    background: "#fff7ed",
+    border: "1px solid #fed7aa",
+    color: "#9a3412",
+    fontWeight: 900,
+    fontFamily: "cairo",
+    fontSize: 13,
+  },
+
+  okBox: {
+    padding: 12,
+    borderRadius: 12,
+    background: "#ecfdf5",
+    border: "1px solid #bbf7d0",
+    color: "#065f46",
+    fontWeight: 900,
+    fontFamily: "cairo",
+  },
+  pagination: {
+    marginTop: 10,
+    display: "flex",
+    gap: 8,
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
+
+  pageBtn: {
+    padding: "8px 12px",
+    borderRadius: 12,
+    border: "1px solid #ddd",
+    background: "white",
+    cursor: "pointer",
+    fontWeight: 900,
+    fontFamily: "cairo",
+  },
+
+  pageBtnDisabled: {
+    opacity: 0.5,
+    cursor: "not-allowed",
+  },
+
+  pageNumbers: {
+    display: "flex",
+    gap: 6,
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
+
+  pageNumBtn: {
+    minWidth: 38,
+    height: 38,
+    padding: "0 10px",
+    borderRadius: 12,
+    border: "1px solid #ddd",
+    background: "white",
+    cursor: "pointer",
+    fontWeight: 900,
+    fontFamily: "cairo",
+  },
+
+  pageNumBtnActive: {
+    background: "#111827",
+    color: "white",
+    border: "1px solid #111827",
+  },
+
+  pageDots: {
+    padding: "0 6px",
+    opacity: 0.7,
+    fontWeight: 900,
+  },
 };

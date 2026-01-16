@@ -4,6 +4,7 @@ import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import ChurchLoader from "@/app/components/ChurchLoader";
 
 type Woman = {
   id: string;
@@ -164,7 +165,7 @@ export default function ReportsPage() {
     });
   }, [pageItems, weekKeys, attByWeek]);
 
-  if (loading) return <div style={{ padding: 20 }}>جاري تحميل التقرير...</div>;
+  if (loading) return <ChurchLoader text="جاري تحميل التقرير ..." />;
 
   return (
     <div style={{ padding: 20, overflowX: "auto" }} dir="rtl">

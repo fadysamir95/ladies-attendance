@@ -1,4 +1,4 @@
-const MEETING_DAY = 1;   // Monday
+const MEETING_DAY = 1;   // Monday (0=Sun..6=Sat)
 const MEETING_HOUR = 18; // 6 PM
 
 function toISODate(d: Date) {
@@ -11,9 +11,12 @@ function toISODate(d: Date) {
 export function getThisWeekSessionDate(now = new Date()) {
   const d = new Date(now);
 
-  // الاثنين يفضل نفس اليوم طول اليوم
-  const diff = (MEETING_DAY - d.getDay() + 7) % 7;
-  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+
+  const day = d.getDay();
+  const diffToMonday = (day - MEETING_DAY + 7) % 7;
+  d.setDate(d.getDate() - diffToMonday);
+
   d.setHours(MEETING_HOUR, 0, 0, 0);
 
   return d;

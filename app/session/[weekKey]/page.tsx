@@ -15,6 +15,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import ChurchLoader from "@/app/components/ChurchLoader";
 
 type Woman = {
   id: string;
@@ -44,6 +45,7 @@ export default function SessionPage() {
   const [records, setRecords] = useState<Record<string, PresentRecord>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "present" | "absent">("all");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
 
@@ -78,7 +80,7 @@ export default function SessionPage() {
     load();
   }, [attRef]);
 
-  const filteredWomen = useMemo(() => {
+  const searchedWomen = useMemo(() => {
     const qName = normalizeArabic(search);
     const qNum = String(search || "").trim();
 
@@ -91,24 +93,30 @@ export default function SessionPage() {
     });
   }, [women, search]);
 
-  const isSearching = search.trim().length > 0;
+  const filteredWomen = useMemo(() => {
+    if (statusFilter === "all") return searchedWomen;
+
+    return searchedWomen.filter((w) => {
+      const isPresent = !!records[w.id];
+      if (statusFilter === "present") return isPresent;
+      return !isPresent; // absent
+    });
+  }, [searchedWomen, statusFilter, records]);
 
   const totalPages = useMemo(() => {
-    if (isSearching) return 1;
     return Math.max(1, Math.ceil(filteredWomen.length / PAGE_SIZE));
-  }, [filteredWomen.length, isSearching]);
+  }, [filteredWomen.length]);
 
   const currentPage = Math.min(page, totalPages);
 
   const pageItems = useMemo(() => {
-    if (isSearching) return filteredWomen;
     const start = (currentPage - 1) * PAGE_SIZE;
     return filteredWomen.slice(start, start + PAGE_SIZE);
-  }, [filteredWomen, currentPage, isSearching]);
+  }, [filteredWomen, currentPage]);
 
   useEffect(() => {
     setPage(1);
-  }, [search]);
+  }, [search, statusFilter]);
 
   async function markPresent(womanId: string) {
     setRecords((prev) => ({
@@ -135,7 +143,7 @@ export default function SessionPage() {
     });
   }
 
-  if (loading) return <div style={{ padding: 20 }}>تحميل...</div>;
+  if (loading) return <ChurchLoader text="جاري التحميل  ..." />;
 
   const total = women.length;
   const shown = pageItems.length;
@@ -149,11 +157,11 @@ export default function SessionPage() {
           <div>
             <div style={s.badge}>تسجيل حضور</div>
             <h2 style={s.title}>اجتماع يوم الإثنين — {weekKey}</h2>
-            <div style={s.subTitle}>سجّلي الحضور فقط، والباقي غياب تلقائيًا.</div>
+            <div style={s.subTitle}>سجّل الحضور فقط، والباقي يعتبر غياب بشكل تلقائي.</div>
           </div>
 
           <div style={s.statsRow}>
-            <Stat label="حضور" value={presentCount} />
+            <Stat label="الحضور" value={presentCount} />
             <Stat label="الإجمالي" value={total} />
             <Stat label="المعروض" value={shown} />
           </div>
@@ -170,6 +178,31 @@ export default function SessionPage() {
                 placeholder="مثال: 101 أو منى"
                 style={s.input}
               />
+              <div style={s.filterRow}>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter("all")}
+                  style={{ ...s.chip, ...(statusFilter === "all" ? s.chipActive : {}) }}
+                >
+                  إظهار الكل
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter("present")}
+                  style={{ ...s.chip, ...(statusFilter === "present" ? s.chipActive : {}) }}
+                >
+                  إظهار الحاضرين فقط
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter("absent")}
+                  style={{ ...s.chip, ...(statusFilter === "absent" ? s.chipActive : {}) }}
+                >
+                  إظهار الغائبين فقط
+                </button>
+              </div>
             </div>
 
             <button
@@ -182,32 +215,16 @@ export default function SessionPage() {
           </div>
         </div>
 
-                {/* Pagination (only when search is empty) */}
-        {!isSearching && filteredWomen.length > PAGE_SIZE && (
-          <div style={s.paginationRow}>
-            <button
-              type="button"
-              style={{ ...s.pageBtn, ...(currentPage <= 1 ? s.pageBtnDisabled : {}) }}
-              disabled={currentPage <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              السابق
-            </button>
-
-            <div style={s.pageInfo}>
-              صفحة <b>{currentPage}</b> / <b>{totalPages}</b>
-            </div>
-
-            <button
-              type="button"
-              style={{ ...s.pageBtn, ...(currentPage >= totalPages ? s.pageBtnDisabled : {}) }}
-              disabled={currentPage >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            >
-              التالي
-            </button>
-          </div>
-        )}
+        {/* Pagination */}
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onFirst={() => setPage(1)}
+          onPrev={() => setPage((p) => Math.max(1, p - 1))}
+          onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+          onLast={() => setPage(totalPages)}
+          onGo={(p) => setPage(p)}
+        />
 
         {/* List */}
         <div style={{ ...s.card, marginTop: 12 }}>
@@ -265,6 +282,16 @@ export default function SessionPage() {
           )}
         </div>
 
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onFirst={() => setPage(1)}
+          onPrev={() => setPage((p) => Math.max(1, p - 1))}
+          onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+          onLast={() => setPage(totalPages)}
+          onGo={(p) => setPage(p)}
+        />
+
         <div style={s.note}>
           * أي اسم غير مسجّل حضور يعتبر غائب تلقائيًا.
         </div>
@@ -273,11 +300,82 @@ export default function SessionPage() {
   );
 }
 
+function getPageNumbers(current: number, total: number) {
+  const delta = 2;
+  const range: number[] = [];
+  const start = Math.max(1, current - delta);
+  const end = Math.min(total, current + delta);
+
+  for (let i = start; i <= end; i++) range.push(i);
+
+  if (!range.includes(1)) range.unshift(1);
+  if (!range.includes(total)) range.push(total);
+
+  return Array.from(new Set(range));
+}
+
 function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div style={s.stat}>
       <div style={s.statValue}>{value}</div>
       <div style={s.statLabel}>{label}</div>
+    </div>
+  );
+}
+
+function Pagination({
+  currentPage,
+  totalPages,
+  onFirst,
+  onPrev,
+  onNext,
+  onLast,
+  onGo,
+}: {
+  currentPage: number;
+  totalPages: number;
+  onFirst: () => void;
+  onPrev: () => void;
+  onNext: () => void;
+  onLast: () => void;
+  onGo: (p: number) => void;
+}) {
+  if (totalPages <= 1) return null;
+
+  const pages = getPageNumbers(currentPage, totalPages);
+
+  return (
+    <div style={s.paginationRow}>
+      <div style={s.paginationLeft}>
+        <button style={s.pageBtn} onClick={onFirst} disabled={currentPage <= 1}>
+          « الأول
+        </button>
+        <button style={s.pageBtn} onClick={onPrev} disabled={currentPage <= 1}>
+          السابق
+        </button>
+      </div>
+
+      <div style={s.pages}>
+        {pages.map((p) => (
+          <button
+            key={p}
+            style={{ ...s.pageNumber, ...(p === currentPage ? s.pageNumberActive : {}) }}
+            onClick={() => onGo(p)}
+            type="button"
+          >
+            {p}
+          </button>
+        ))}
+      </div>
+
+      <div style={s.paginationRight}>
+        <button style={s.pageBtn} onClick={onNext} disabled={currentPage >= totalPages}>
+          التالي
+        </button>
+        <button style={s.pageBtn} onClick={onLast} disabled={currentPage >= totalPages}>
+          الأخير »
+        </button>
+      </div>
     </div>
   );
 }
@@ -474,7 +572,7 @@ const s: Record<string, React.CSSProperties> = {
 
   empty: { padding: 14, opacity: 0.75 },
   note: { marginTop: 12, opacity: 0.7, fontSize: 13 },
-    paginationRow: {
+  paginationRow: {
     marginTop: 12,
     display: "flex",
     gap: 10,
@@ -502,5 +600,56 @@ const s: Record<string, React.CSSProperties> = {
   pageInfo: {
     opacity: 0.75,
     fontFamily: "cairo",
+  },
+
+  filterRow: {
+    marginTop: 10,
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+
+  chip: {
+    padding: "8px 12px",
+    borderRadius: 999,
+    border: "1px solid #e5e7eb",
+    background: "white",
+    cursor: "pointer",
+    fontWeight: 900,
+    fontFamily: "cairo",
+  },
+
+  chipActive: {
+    background: "#111827",
+    color: "white",
+    border: "1px solid #111827",
+  },
+
+  paginationLeft: { display: "flex", gap: 8, flexWrap: "wrap" },
+  paginationRight: { display: "flex", gap: 8, flexWrap: "wrap" },
+
+  pages: {
+    display: "flex",
+    gap: 6,
+    flexWrap: "wrap",
+    justifyContent: "center",
+  },
+
+  pageNumber: {
+    minWidth: 38,
+    height: 38,
+    padding: "0 10px",
+    borderRadius: 12,
+    border: "1px solid #e5e7eb",
+    background: "white",
+    cursor: "pointer",
+    fontWeight: 900,
+    fontFamily: "cairo",
+  },
+
+  pageNumberActive: {
+    background: "#111827",
+    color: "white",
+    border: "1px solid #111827",
   },
 };

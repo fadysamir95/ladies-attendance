@@ -1,6 +1,11 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import ChurchLoader from "@/app/components/ChurchLoader";
 
 export default function Home() {
+  const [loading, setLoading] = useState(true);
   const items = [
     {
       title: "إدارة السيدات",
@@ -18,6 +23,13 @@ export default function Home() {
       href: "/reports",
     },
   ];
+
+  useEffect(() => {
+    const t = setTimeout(() => setLoading(false), 600);
+    return () => clearTimeout(t);
+  }, []);
+
+  if (loading) return <ChurchLoader text="جاري تحميل الصفحة الرئيسية..." />
 
   return (
     <div style={s.page}>
