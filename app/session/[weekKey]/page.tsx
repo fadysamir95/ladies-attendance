@@ -37,34 +37,88 @@ function normalizeArabic(s: string) {
     .replace(/ة/g, "ه");
 }
 
+// ------------------ Week helpers ------------------
+const MEETING_DAY = 1; // Monday (0=Sun..6=Sat)
+
+function toISODate(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+// Monday of current week (00:00) based on "now"
+function getWeekMonday(now = new Date()) {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+
+  // go back to nearest Monday (today if Monday)
+  const diffToMonday = (d.getDay() - MEETING_DAY + 7) % 7;
+  d.setDate(d.getDate() - diffToMonday);
+  return d;
+}
+
+// ✅ المطلوب: يبدأ الأسبوع الجديد من أول يوم الإثنين (00:00)
+function getDefaultWeekKey(now = new Date()) {
+  return toISODate(getWeekMonday(now));
+}
+
+// ✅ options: current ± 2 weeks  => 5 weeks
+function getWeekOptions(now = new Date()) {
+  const monday = getWeekMonday(now); // current monday 00:00
+  const keys: string[] = [];
+
+  // -2, -1, 0, +1, +2
+  for (let offset = -2; offset <= 2; offset++) {
+    const d = new Date(monday);
+    d.setDate(d.getDate() + offset * 7);
+    keys.push(toISODate(d));
+  }
+
+  return keys;
+}
+
 export default function SessionPage() {
   const params = useParams();
-  const weekKey = params.weekKey as string;
+  const weekKeyFromUrl = (params.weekKey as string) || "";
+
+  // week options (stable list per mount; لو عايزها تتحدث تلقائيًا كل يوم، نقدر نعملها بسهولة)
+  const weekOptions = useMemo(() => getWeekOptions(new Date()), []);
+
+  // selected week
+  const [selectedWeekKey, setSelectedWeekKey] = useState(() => {
+    return weekKeyFromUrl || getDefaultWeekKey(new Date());
+  });
 
   const [women, setWomen] = useState<Woman[]>([]);
   const [records, setRecords] = useState<Record<string, PresentRecord>>({});
   const [loading, setLoading] = useState(true);
+
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "present" | "absent">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "present" | "absent">(
+    "all"
+  );
+
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
 
-  const attRef = useMemo(() => doc(db, "attendance", weekKey), [weekKey]);
+  const attRef = useMemo(
+    () => doc(db, "attendance", selectedWeekKey),
+    [selectedWeekKey]
+  );
 
   useEffect(() => {
     async function load() {
       setLoading(true);
 
+      // women
       const qWomen = query(collection(db, "women"), where("active", "==", true));
       const womenSnap = await getDocs(qWomen);
-
-      const list = womenSnap.docs.map(
-        (d) => ({ id: d.id, ...d.data() } as Woman)
-      );
-
+      const list = womenSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Woman));
       list.sort((a, b) => (a.code ?? 0) - (b.code ?? 0));
       setWomen(list);
 
+      // attendance doc
       const attSnap = await getDoc(attRef);
 
       if (!attSnap.exists()) {
@@ -79,6 +133,11 @@ export default function SessionPage() {
 
     load();
   }, [attRef]);
+
+  // reset page when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [search, statusFilter, selectedWeekKey]);
 
   const searchedWomen = useMemo(() => {
     const qName = normalizeArabic(search);
@@ -99,13 +158,14 @@ export default function SessionPage() {
     return searchedWomen.filter((w) => {
       const isPresent = !!records[w.id];
       if (statusFilter === "present") return isPresent;
-      return !isPresent; // absent
+      return !isPresent;
     });
   }, [searchedWomen, statusFilter, records]);
 
-  const totalPages = useMemo(() => {
-    return Math.max(1, Math.ceil(filteredWomen.length / PAGE_SIZE));
-  }, [filteredWomen.length]);
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(filteredWomen.length / PAGE_SIZE)),
+    [filteredWomen.length]
+  );
 
   const currentPage = Math.min(page, totalPages);
 
@@ -114,11 +174,8 @@ export default function SessionPage() {
     return filteredWomen.slice(start, start + PAGE_SIZE);
   }, [filteredWomen, currentPage]);
 
-  useEffect(() => {
-    setPage(1);
-  }, [search, statusFilter]);
-
   async function markPresent(womanId: string) {
+    // optimistic
     setRecords((prev) => ({
       ...prev,
       [womanId]: { markedAt: new Date() },
@@ -156,8 +213,10 @@ export default function SessionPage() {
         <div style={s.headerCard}>
           <div>
             <div style={s.badge}>تسجيل حضور</div>
-            <h2 style={s.title}>اجتماع يوم الإثنين — {weekKey}</h2>
-            <div style={s.subTitle}>سجّل الحضور فقط، والباقي يعتبر غياب بشكل تلقائي.</div>
+            <h2 style={s.title}>اجتماع يوم الإثنين — {selectedWeekKey}</h2>
+            <div style={s.subTitle}>
+              سجّل الحضور فقط، والباقي يعتبر غياب بشكل تلقائي.
+            </div>
           </div>
 
           <div style={s.statsRow}>
@@ -167,7 +226,50 @@ export default function SessionPage() {
           </div>
         </div>
 
-        {/* Search card */}
+        {/* Week switcher */}
+        <div style={s.card}>
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <div style={{ fontWeight: 900, fontFamily: "cairo" }}>اختيار الأسبوع:</div>
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {weekOptions.map((wk) => {
+                const active = wk === selectedWeekKey;
+                return (
+                  <button
+                    key={wk}
+                    type="button"
+                    onClick={() => setSelectedWeekKey(wk)}
+                    style={{ ...s.chip, ...(active ? s.chipActive : {}) }}
+                  >
+                    {wk}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setSelectedWeekKey(getDefaultWeekKey(new Date()))}
+              style={s.btnGhostSmall}
+            >
+              رجوع للأسبوع الحالي
+            </button>
+          </div>
+
+          <div style={{ marginTop: 6, opacity: 0.7, fontSize: 13, fontFamily: "cairo" }}>
+            * يظهر: الأسبوع الحالي + أسبوعين قبل + أسبوعين بعد.
+          </div>
+        </div>
+
+        {/* Search + filter */}
         <div style={s.card}>
           <div style={s.searchRow}>
             <div style={{ flex: 1 }}>
@@ -178,6 +280,7 @@ export default function SessionPage() {
                 placeholder="مثال: 101 أو منى"
                 style={s.input}
               />
+
               <div style={s.filterRow}>
                 <button
                   type="button"
@@ -205,17 +308,13 @@ export default function SessionPage() {
               </div>
             </div>
 
-            <button
-              onClick={() => setSearch("")}
-              style={s.secondaryBtn}
-              disabled={!search}
-            >
+            <button onClick={() => setSearch("")} style={s.secondaryBtn} disabled={!search}>
               مسح
             </button>
           </div>
         </div>
 
-        {/* Pagination */}
+        {/* Pagination top */}
         <Pagination
           currentPage={currentPage}
           totalPages={totalPages}
@@ -249,13 +348,11 @@ export default function SessionPage() {
                     ...(isPresent ? s.rowPresent : {}),
                   }}
                 >
-                  {/* name */}
                   <div style={s.nameCell}>
                     <span style={s.codePill}>{w.code}</span>
                     <span style={s.nameText}>{w.name}</span>
                   </div>
 
-                  {/* status */}
                   <div style={{ textAlign: "left" }}>
                     {isPresent ? (
                       <span style={s.badgePresent}>حاضر</span>
@@ -264,7 +361,6 @@ export default function SessionPage() {
                     )}
                   </div>
 
-                  {/* action */}
                   <div style={{ textAlign: "left" }}>
                     {!isPresent ? (
                       <button style={s.primaryBtn} onClick={() => markPresent(w.id)}>
@@ -282,6 +378,7 @@ export default function SessionPage() {
           )}
         </div>
 
+        {/* Pagination bottom */}
         <Pagination
           currentPage={currentPage}
           totalPages={totalPages}
@@ -292,9 +389,7 @@ export default function SessionPage() {
           onGo={(p) => setPage(p)}
         />
 
-        <div style={s.note}>
-          * أي اسم غير مسجّل حضور يعتبر غائب تلقائيًا.
-        </div>
+        <div style={s.note}>* أي اسم غير مسجّل حضور يعتبر غائب تلقائيًا.</div>
       </div>
     </div>
   );
@@ -347,10 +442,10 @@ function Pagination({
   return (
     <div style={s.paginationRow}>
       <div style={s.paginationLeft}>
-        <button style={s.pageBtn} onClick={onFirst} disabled={currentPage <= 1}>
+        <button style={s.pageBtn} onClick={onFirst} disabled={currentPage <= 1} type="button">
           « الأول
         </button>
-        <button style={s.pageBtn} onClick={onPrev} disabled={currentPage <= 1}>
+        <button style={s.pageBtn} onClick={onPrev} disabled={currentPage <= 1} type="button">
           السابق
         </button>
       </div>
@@ -369,10 +464,10 @@ function Pagination({
       </div>
 
       <div style={s.paginationRight}>
-        <button style={s.pageBtn} onClick={onNext} disabled={currentPage >= totalPages}>
+        <button style={s.pageBtn} onClick={onNext} disabled={currentPage >= totalPages} type="button">
           التالي
         </button>
-        <button style={s.pageBtn} onClick={onLast} disabled={currentPage >= totalPages}>
+        <button style={s.pageBtn} onClick={onLast} disabled={currentPage >= totalPages} type="button">
           الأخير »
         </button>
       </div>
@@ -412,17 +507,20 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: 12,
     fontWeight: 900,
     marginBottom: 8,
+    fontFamily: "cairo",
   },
   title: {
     margin: 0,
     fontSize: 22,
     fontWeight: 900,
+    fontFamily: "cairo",
   },
   subTitle: {
     marginTop: 6,
     opacity: 0.7,
     fontSize: 13,
     lineHeight: 1.6,
+    fontFamily: "cairo",
   },
 
   statsRow: {
@@ -437,6 +535,7 @@ const s: Record<string, React.CSSProperties> = {
     padding: "10px 12px",
     minWidth: 110,
     textAlign: "center",
+    fontFamily: "cairo",
   },
   statValue: { fontSize: 18, fontWeight: 900 },
   statLabel: { fontSize: 12, opacity: 0.7, marginTop: 2 },
@@ -480,6 +579,7 @@ const s: Record<string, React.CSSProperties> = {
     padding: "10px 8px",
     borderBottom: "1px solid #eee",
     opacity: 0.85,
+    fontFamily: "cairo",
   },
 
   row: {
@@ -489,6 +589,7 @@ const s: Record<string, React.CSSProperties> = {
     padding: "12px 8px",
     borderBottom: "1px solid #f1f1f1",
     alignItems: "center",
+    fontFamily: "cairo",
   },
   rowPresent: {
     background: "#ecfdf5",
@@ -570,8 +671,9 @@ const s: Record<string, React.CSSProperties> = {
     fontFamily: "cairo",
   },
 
-  empty: { padding: 14, opacity: 0.75 },
-  note: { marginTop: 12, opacity: 0.7, fontSize: 13 },
+  empty: { padding: 14, opacity: 0.75, fontFamily: "cairo" },
+  note: { marginTop: 12, opacity: 0.7, fontSize: 13, fontFamily: "cairo" },
+
   paginationRow: {
     marginTop: 12,
     display: "flex",
@@ -590,16 +692,6 @@ const s: Record<string, React.CSSProperties> = {
     fontWeight: 900,
     fontFamily: "cairo",
     transition: "all 180ms ease",
-  },
-
-  pageBtnDisabled: {
-    opacity: 0.5,
-    cursor: "not-allowed",
-  },
-
-  pageInfo: {
-    opacity: 0.75,
-    fontFamily: "cairo",
   },
 
   filterRow: {
@@ -623,6 +715,16 @@ const s: Record<string, React.CSSProperties> = {
     background: "#111827",
     color: "white",
     border: "1px solid #111827",
+  },
+
+  btnGhostSmall: {
+    padding: "8px 12px",
+    borderRadius: 12,
+    border: "1px solid #e5e7eb",
+    background: "white",
+    cursor: "pointer",
+    fontWeight: 900,
+    fontFamily: "cairo",
   },
 
   paginationLeft: { display: "flex", gap: 8, flexWrap: "wrap" },
