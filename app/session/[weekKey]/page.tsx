@@ -58,7 +58,6 @@ function getWeekMonday(now = new Date()) {
   return d;
 }
 
-// ✅ المطلوب: يبدأ الأسبوع الجديد من أول يوم الإثنين (00:00)
 function getDefaultWeekKey(now = new Date()) {
   return toISODate(getWeekMonday(now));
 }
@@ -68,7 +67,6 @@ function getWeekOptions(now = new Date()) {
   const monday = getWeekMonday(now); // current monday 00:00
   const keys: string[] = [];
 
-  // -2, -1, 0, +1, +2
   for (let offset = -2; offset <= 2; offset++) {
     const d = new Date(monday);
     d.setDate(d.getDate() + offset * 7);
