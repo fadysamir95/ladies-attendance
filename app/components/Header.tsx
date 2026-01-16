@@ -131,6 +131,7 @@ const s: Record<string, React.CSSProperties> = {
         alignItems: "center",
         justifyContent: "space-between",
         gap: 12,
+        flexWrap: "wrap",
     },
     logo: { display: "block", cursor: "pointer", },
 
