@@ -387,7 +387,7 @@ const s: Record<string, React.CSSProperties> = {
     padding: 16,
   },
   container: {
-    maxWidth: 1000,
+    maxWidth: 1100,
     margin: "0 auto",
   },
 

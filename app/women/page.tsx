@@ -334,7 +334,7 @@ export default function WomenPage() {
           <div>
             <h1 style={styles.title}>ادارة السيدات</h1>
             <p style={styles.subTitle}>
-              كنيسة الشهيد العظيم مارجرجس بالجيوشي - شبرا مصر
+              كنيسة الشهيد العظيم مارجرجس الجيوشي - شبرا مصر
             </p>
           </div>
 
