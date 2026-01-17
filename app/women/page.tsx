@@ -69,7 +69,7 @@ export default function WomenPage() {
 
   // auth/role
   const [user, setUser] = useState<FirebaseUser | null>(null);
-  const [role, setRole] = useState<Role>("admin");
+  const [role, setRole] = useState<Role>("reports_viewer");
   const isReadOnly = role === "reports_viewer";
   const [roleLoading, setRoleLoading] = useState(true);
 

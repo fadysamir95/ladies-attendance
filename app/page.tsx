@@ -1,51 +1,53 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ChurchLoader from "@/app/components/ChurchLoader";
-import { useAuthRole } from "./providers/AuthRoleProvider";
+import { useAuthRole } from "@/app/providers/AuthRoleProvider";
 
 export default function Home() {
-  const [loading, setLoading] = useState(true);
+  const [loadingUi, setLoadingUi] = useState(true);
   const { role, loading: roleLoading } = useAuthRole();
 
   const isAdmin = role === "admin";
 
-  const items = [
-    {
-      title: "إدارة السيدات",
-      desc: "إضافة/تعديل/تعطيل/حذف + استيراد CSV وترتيب دائم حسب الرقم.",
-      href: "/women",
-      adminOnly: false,
-    },
-    {
-      title: "تسجيل الحضور",
-      desc: "تسجيل حضور الاجتماع بامكانية البحث بالاسم أو الرقم لسرعة التسجيل.",
-      href: "/session",
-      adminOnly: true,
-    },
-    {
-      title: "تقارير المواظبة",
-      desc: "عرض تقرير الشهر والتنقل بين الشهور ومتابعة المواظبة.",
-      href: "/reports",
-      adminOnly: false,
-    },
-  ];
+  const items = useMemo(
+    () => [
+      {
+        title: "إدارة السيدات",
+        desc: "إضافة/تعديل/تعطيل/حذف + استيراد CSV وترتيب دائم حسب الرقم.",
+        href: "/women",
+        adminOnly: false, // انت مخليها تظهر للـ reports_viewer (بس هتكون قراءة فقط داخل الصفحة)
+      },
+      {
+        title: "تسجيل الحضور",
+        desc: "تسجيل حضور الاجتماع بامكانية البحث بالاسم أو الرقم لسرعة التسجيل.",
+        href: "/session",
+        adminOnly: true, // ✅ تتخفى لغير الأدمن
+      },
+      {
+        title: "تقارير المواظبة",
+        desc: "عرض تقرير الشهر والتنقل بين الشهور ومتابعة المواظبة.",
+        href: "/reports",
+        adminOnly: false,
+      },
+    ],
+    []
+  );
 
   const visibleItems = useMemo(() => {
-    return items.filter((item) => {
-      if (item.adminOnly && !isAdmin) return false;
-      return true;
-    });
-  }, [isAdmin]);
+    if (roleLoading) return []; // عشان ما يحصلش flicker (تظهر وبعدين تختفي)
+    return items.filter((it) => !it.adminOnly || isAdmin);
+  }, [items, isAdmin, roleLoading]);
 
   useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 600);
+    const t = setTimeout(() => setLoadingUi(false), 600);
     return () => clearTimeout(t);
   }, []);
 
-  if (loading || roleLoading)
+  if (loadingUi || roleLoading) {
     return <ChurchLoader text="جاري تحميل الصفحة الرئيسية..." />;
+  }
 
   return (
     <div style={s.page}>
@@ -65,10 +67,7 @@ export default function Home() {
 }
 
 const s: Record<string, React.CSSProperties> = {
-  page: {
-    maxWidth: 1100,
-    margin: "0 auto",
-  },
+  page: { maxWidth: 1100, margin: "0 auto" },
   h1: { margin: "6px 0 4px", fontSize: 24 },
   p: { margin: "0 0 14px", opacity: 0.75 },
   grid: {
