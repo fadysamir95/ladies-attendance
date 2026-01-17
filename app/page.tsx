@@ -1,35 +1,51 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import ChurchLoader from "@/app/components/ChurchLoader";
+import { useAuthRole } from "./providers/AuthRoleProvider";
 
 export default function Home() {
   const [loading, setLoading] = useState(true);
+  const { role, loading: roleLoading } = useAuthRole();
+
+  const isAdmin = role === "admin";
+
   const items = [
     {
       title: "إدارة السيدات",
       desc: "إضافة/تعديل/تعطيل/حذف + استيراد CSV وترتيب دائم حسب الرقم.",
       href: "/women",
+      adminOnly: false,
     },
     {
       title: "تسجيل الحضور",
       desc: "تسجيل حضور الاجتماع بامكانية البحث بالاسم أو الرقم لسرعة التسجيل.",
       href: "/session",
+      adminOnly: true,
     },
     {
       title: "تقارير المواظبة",
       desc: "عرض تقرير الشهر والتنقل بين الشهور ومتابعة المواظبة.",
       href: "/reports",
+      adminOnly: false,
     },
   ];
+
+  const visibleItems = useMemo(() => {
+    return items.filter((item) => {
+      if (item.adminOnly && !isAdmin) return false;
+      return true;
+    });
+  }, [isAdmin]);
 
   useEffect(() => {
     const t = setTimeout(() => setLoading(false), 600);
     return () => clearTimeout(t);
   }, []);
 
-  if (loading) return <ChurchLoader text="جاري تحميل الصفحة الرئيسية..." />
+  if (loading || roleLoading)
+    return <ChurchLoader text="جاري تحميل الصفحة الرئيسية..." />;
 
   return (
     <div style={s.page}>
@@ -37,7 +53,7 @@ export default function Home() {
       <p style={s.p}>اختر القسم الذي تريد الدخول إليه.</p>
 
       <div style={s.grid}>
-        {items.map((it) => (
+        {visibleItems.map((it) => (
           <Link key={it.href} href={it.href} style={s.card} className="home-box">
             <div style={s.cardTitle}>{it.title}</div>
             <div style={s.cardDesc}>{it.desc}</div>
@@ -74,9 +90,4 @@ const s: Record<string, React.CSSProperties> = {
   },
   cardTitle: { fontWeight: 900, fontSize: 18 },
   cardDesc: { opacity: 0.75, lineHeight: 1.6 },
-  cardGo: {
-    marginTop: "auto",
-    fontWeight: 900,
-    opacity: 0.9,
-  },
 };

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Header from "./components/Header";
 import { Cairo } from "next/font/google";
 import "./globals.css";
+import AuthRoleProvider from "./providers/AuthRoleProvider";
 
 const cairo = Cairo({
   subsets: ["arabic"],
@@ -21,8 +22,12 @@ export default function RootLayout({
   return (
     <html lang="ar" dir="rtl" className={cairo.className}>
       <body style={{ margin: 0, background: "#f6f7fb", fontFamily: "cairo" }}>
-        <Header />
-        <main style={{ padding: 16 }}>{children}</main>
+        <AuthRoleProvider>
+          <Header />
+          <main style={{ padding: 16 }}>
+            {children}
+          </main>
+        </AuthRoleProvider>
       </body>
     </html>
   );

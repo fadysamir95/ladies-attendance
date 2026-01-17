@@ -1,15 +1,8 @@
 "use client";
 
 import type React from "react";
-import { useEffect, useMemo, useState } from "react";
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  query,
-  where,
-} from "firebase/firestore";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import ChurchLoader from "@/app/components/ChurchLoader";
 
@@ -63,12 +56,20 @@ function getMondaysOfMonth(year: number, monthIndex0: number): string[] {
 
 const PAGE_SIZE = 50;
 
+const PRIMARY = "#152755";
+const WOMEN_CACHE_KEY = "women_active_cache_v1";
+const REPORTS_ATT_CACHE_KEY = "reports_att_cache_v1"; // session storage
+
 export default function ReportsPage() {
   const [monthOffset, setMonthOffset] = useState<number>(0);
 
   const [women, setWomen] = useState<Woman[]>([]);
   const [attByWeek, setAttByWeek] = useState<Record<string, AttendanceDoc>>({});
-  const [loading, setLoading] = useState<boolean>(true);
+
+  const [loadingWomen, setLoadingWomen] = useState(true);
+  const [loadingAtt, setLoadingAtt] = useState(true);
+
+  const [error, setError] = useState<string | null>(null);
 
   // ✅ search + pagination
   const [search, setSearch] = useState("");
@@ -77,52 +78,158 @@ export default function ReportsPage() {
   // ✅ sorting by attendance percentage
   const [sortMode, setSortMode] = useState<"default" | "desc" | "asc">("default");
 
-  const { year, monthIndex0, weekKeys, title } = useMemo(() => {
+  // ✅ in-memory cache: monthKey -> attByWeek
+  const attMonthCache = useRef<Record<string, Record<string, AttendanceDoc>>>({});
+
+  const { year, monthIndex0, weekKeys, title, monthKey } = useMemo(() => {
     const now = new Date();
     const d = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
     const y = d.getFullYear();
     const m0 = d.getMonth();
     const keys = getMondaysOfMonth(y, m0);
+
     return {
       year: y,
       monthIndex0: m0,
       weekKeys: keys,
       title: monthTitle(y, m0),
+      monthKey: `${y}-${String(m0 + 1).padStart(2, "0")}`, // e.g. 2026-01
     };
   }, [monthOffset]);
 
+  const loading = loadingWomen || loadingAtt;
+
   useEffect(() => {
-    async function load() {
-      setLoading(true);
+    async function loadWomenOnce() {
+      setError(null);
+      setLoadingWomen(true);
 
-      // 1) Load active women
-      const qWomen = query(collection(db, "women"), where("active", "==", true));
-      const womenSnap = await getDocs(qWomen);
-      const womenList = womenSnap.docs.map(
-        (d) => ({ id: d.id, ...d.data() } as Woman)
-      );
+      // cache first
+      try {
+        const raw = sessionStorage.getItem(WOMEN_CACHE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw) as Woman[];
+          if (Array.isArray(parsed)) {
+            setWomen(parsed);
+            setLoadingWomen(false);
+            return;
+          }
+        }
+      } catch {
+        // ignore
+      }
 
-      // ✅ sort by code always
-      womenList.sort((a, b) => (a.code ?? 0) - (b.code ?? 0));
-      setWomen(womenList);
+      try {
+        const qWomen = query(collection(db, "women"), where("active", "==", true));
+        const womenSnap = await getDocs(qWomen);
+        const list = womenSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Woman));
 
-      // 2) Load attendance docs for month Mondays
-      const pairs = await Promise.all(
-        weekKeys.map(async (wk) => {
-          const snap = await getDoc(doc(db, "attendance", wk));
-          return [wk, snap.exists() ? (snap.data() as AttendanceDoc) : {}] as const;
-        })
-      );
+        list.sort((a, b) => (a.code ?? 0) - (b.code ?? 0));
+        setWomen(list);
 
-      const map: Record<string, AttendanceDoc> = {};
-      for (const [wk, data] of pairs) map[wk] = data;
-
-      setAttByWeek(map);
-      setLoading(false);
+        try {
+          sessionStorage.setItem(WOMEN_CACHE_KEY, JSON.stringify(list));
+        } catch {
+          // ignore
+        }
+      } catch (e: any) {
+        setError("حدث خطأ أثناء تحميل السيدات. تأكد من الاتصال بالإنترنت ثم حاول مرة أخرى.");
+      } finally {
+        setLoadingWomen(false);
+      }
     }
 
-    load();
-  }, [weekKeys]);
+    loadWomenOnce();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAttendanceForMonth() {
+      setError(null);
+      setLoadingAtt(true);
+
+      // memory cache
+      const mem = attMonthCache.current[monthKey];
+      if (mem) {
+        if (!cancelled) setAttByWeek(mem);
+        if (!cancelled) setLoadingAtt(false);
+        return;
+      }
+
+      // session storage cache
+      try {
+        const raw = sessionStorage.getItem(REPORTS_ATT_CACHE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw) as Record<string, Record<string, AttendanceDoc>>;
+          const hit = parsed?.[monthKey];
+          if (hit) {
+            attMonthCache.current[monthKey] = hit;
+            if (!cancelled) setAttByWeek(hit);
+            if (!cancelled) setLoadingAtt(false);
+            return;
+          }
+        }
+      } catch {
+        // ignore
+      }
+
+      // fetch from firestore
+      try {
+        const pairs = await Promise.all(
+          weekKeys.map(async (wk) => {
+            const snap = await getDoc(doc(db, "attendance", wk));
+            return [wk, snap.exists() ? (snap.data() as AttendanceDoc) : {}] as const;
+          })
+        );
+
+        const map: Record<string, AttendanceDoc> = {};
+        for (const [wk, data] of pairs) map[wk] = data;
+
+        // save caches
+        attMonthCache.current[monthKey] = map;
+
+        try {
+          const raw = sessionStorage.getItem(REPORTS_ATT_CACHE_KEY);
+          const parsed = raw ? (JSON.parse(raw) as Record<string, Record<string, AttendanceDoc>>) : {};
+          parsed[monthKey] = map;
+
+          // حافظ على آخر 6 شهور فقط لتقليل الحجم
+          const keys = Object.keys(parsed).sort(); // YYYY-MM
+          while (keys.length > 6) {
+            const k = keys.shift();
+            if (k) delete parsed[k];
+          }
+
+          sessionStorage.setItem(REPORTS_ATT_CACHE_KEY, JSON.stringify(parsed));
+        } catch {
+          // ignore
+        }
+
+        if (!cancelled) setAttByWeek(map);
+      } catch (e: any) {
+        setError("حدث خطأ أثناء تحميل بيانات الحضور لهذا الشهر. من فضلك اضغط إعادة المحاولة.");
+      } finally {
+        if (!cancelled) setLoadingAtt(false);
+      }
+    }
+
+    loadAttendanceForMonth();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [monthKey, weekKeys]);
+
+  function retry() {
+    delete attMonthCache.current[monthKey];
+    setAttByWeek({});
+    setLoadingAtt(true);
+    setError(null);
+
+    // trigger by forcing monthOffset setter to same value (works with small hack)
+    setMonthOffset((v) => v);
+  }
 
   // ✅ reset page when search/month/sort changes
   useEffect(() => {
@@ -160,24 +267,20 @@ export default function ReportsPage() {
       const absent = total - present;
       const pct = total === 0 ? 0 : Math.round((present / total) * 100);
 
-      return { w, marks, present, absent, pct };
+      return { w, marks, present, absent, pct, total };
     });
   }, [filteredWomen, weekKeys, attByWeek]);
 
   const sortedRows = useMemo(() => {
     const arr = [...computedAllRows];
 
-    // الوضع الافتراضي → رجوع للترتيب الطبيعي حسب الرقم
     if (sortMode === "default") {
       arr.sort((a, b) => (a.w.code ?? 0) - (b.w.code ?? 0));
       return arr;
     }
 
-    // ترتيب حسب نسبة الحضور
     arr.sort((a, b) => {
-      if (a.pct !== b.pct) {
-        return sortMode === "asc" ? a.pct - b.pct : b.pct - a.pct;
-      }
+      if (a.pct !== b.pct) return sortMode === "asc" ? a.pct - b.pct : b.pct - a.pct;
       return (a.w.code ?? 0) - (b.w.code ?? 0);
     });
 
@@ -192,7 +295,7 @@ export default function ReportsPage() {
   const currentPage = Math.min(page, totalPages);
 
   const pageRows = useMemo(() => {
-    if (isSearching) return sortedRows; // show all matches
+    if (isSearching) return sortedRows;
     const start = (currentPage - 1) * PAGE_SIZE;
     return sortedRows.slice(start, start + PAGE_SIZE);
   }, [sortedRows, currentPage, isSearching]);
@@ -210,37 +313,25 @@ export default function ReportsPage() {
             <b>
               {year}-{String(monthIndex0 + 1).padStart(2, "0")}
             </b>{" "}
-            | عدد الاجتماعات: <b>{weekKeys.length}</b> | عدد السيدات:{" "}
-            <b>{women.length}</b>
+            | عدد الاجتماعات: <b>{weekKeys.length}</b> | عدد السيدات: <b>{women.length}</b>
           </div>
         </div>
 
         <div style={s.btnRow}>
-          <button
-            onClick={() => setMonthOffset((v) => v - 1)}
-            style={s.btnGhost}
-            type="button"
-          >
+          <button onClick={() => setMonthOffset((v) => v - 1)} style={s.btnGhost} type="button">
             <span style={s.btnIcon}>➡</span> الشهر السابق
           </button>
 
           <button
             onClick={() => setMonthOffset(0)}
-            style={{
-              ...s.btnPrimary,
-              ...(monthOffset === 0 ? s.btnPrimaryDisabled : {}),
-            }}
+            style={{ ...s.btnPrimary, ...(monthOffset === 0 ? s.btnPrimaryDisabled : {}) }}
             disabled={monthOffset === 0}
             type="button"
           >
             الشهر الحالي
           </button>
 
-          <button
-            onClick={() => setMonthOffset((v) => v + 1)}
-            style={s.btnGhost}
-            type="button"
-          >
+          <button onClick={() => setMonthOffset((v) => v + 1)} style={s.btnGhost} type="button">
             الشهر التالي <span style={s.btnIcon}>⬅</span>
           </button>
         </div>
@@ -250,17 +341,22 @@ export default function ReportsPage() {
         * أي اسم غير مسجّل حضور في الاجتماع يعتبر غائب تلقائيًا.
       </p>
 
+      {/* error card */}
+      {error && (
+        <div style={{ ...s.card, marginTop: 12, border: "1px solid #fecaca", background: "#fff1f2" }}>
+          <div style={{ fontWeight: 900, color: "#991b1b", marginBottom: 8 }}>{error}</div>
+          <button type="button" onClick={retry} style={s.btnPrimary}>
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
+
       {/* tools card: search + sort */}
-      <div style={s.card}>
+      <div style={{ ...s.card, marginTop: 12 }}>
         <div style={s.toolsRow}>
           <div style={{ flex: 1, minWidth: 260 }}>
             <label style={s.label}>بحث (بالاسم أو الرقم)</label>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="مثال: 101 أو منى"
-              style={s.input}
-            />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="مثال: 101 أو منى" style={s.input} />
           </div>
 
           <button type="button" onClick={() => setSearch("")} style={s.clearBtn} disabled={!search}>
@@ -269,19 +365,11 @@ export default function ReportsPage() {
 
           <button
             type="button"
-            onClick={() =>
-              setSortMode((m) =>
-                m === "default" ? "desc" : m === "desc" ? "asc" : "default"
-              )
-            }
+            onClick={() => setSortMode((m) => (m === "default" ? "desc" : m === "desc" ? "asc" : "default"))}
             style={s.btnGhost}
           >
             الترتيب:{" "}
-            {sortMode === "default"
-              ? "افتراضي (حسب الرقم)"
-              : sortMode === "desc"
-              ? "نسبة الحضور تنازلي ↓"
-              : "نسبة الحضور تصاعدي ↑"}
+            {sortMode === "default" ? "افتراضي (حسب الرقم)" : sortMode === "desc" ? "نسبة الحضور تنازلي ↓" : "نسبة الحضور تصاعدي ↑"}
           </button>
 
           <div style={s.resultsNote}>
@@ -295,10 +383,7 @@ export default function ReportsPage() {
           </div>
         </div>
 
-        {/* pagination top (only when search empty) */}
-        {!isSearching && totalPages > 1 && (
-          <Pagination page={currentPage} totalPages={totalPages} onPage={setPage} />
-        )}
+        {!isSearching && totalPages > 1 && <Pagination page={currentPage} totalPages={totalPages} onPage={setPage} />}
       </div>
 
       {weekKeys.length === 0 ? (
@@ -327,17 +412,12 @@ export default function ReportsPage() {
               </thead>
 
               <tbody>
-                {pageRows.map(({ w, marks, present, absent, pct }) => {
-                  const never = weekKeys.length > 0 && present === 0;
+                {pageRows.map(({ w, marks, present, absent, pct, total }) => {
+                  const isAll = total > 0 && present === total;
+                  const isZero = total > 0 && present === 0;
 
                   return (
-                    <tr
-                      key={w.id}
-                      style={{
-                        ...(present === weekKeys.length && weekKeys.length > 0 ? rowAllPresent : {}),
-                        ...(present === 0 && weekKeys.length > 0 ? rowZeroPresent : {}),
-                      }}
-                    >
+                    <tr key={w.id} style={{ ...(isAll ? rowAllPresent : {}), ...(isZero ? rowZeroPresent : {}) }}>
                       <td style={tdCenter}>{w.code}</td>
                       <td style={td}>{w.name}</td>
 
@@ -350,12 +430,7 @@ export default function ReportsPage() {
                       <td style={tdCenter}>{present}</td>
                       <td style={tdCenter}>{absent}</td>
                       <td style={tdCenter}>
-                        <span
-                          style={{
-                            ...s.pctPill,
-                            ...(never ? s.pctPillBad : pct >= 75 ? s.pctPillGood : {}),
-                          }}
-                        >
+                        <span style={{ ...s.pctPill, ...(isZero ? s.pctPillBad : pct >= 75 ? s.pctPillGood : {}) }}>
                           {pct}%
                         </span>
                       </td>
@@ -366,10 +441,7 @@ export default function ReportsPage() {
             </table>
           </div>
 
-          {/* pagination bottom (only when search empty) */}
-          {!isSearching && totalPages > 1 && (
-            <Pagination page={currentPage} totalPages={totalPages} onPage={setPage} />
-          )}
+          {!isSearching && totalPages > 1 && <Pagination page={currentPage} totalPages={totalPages} onPage={setPage} />}
         </div>
       )}
     </div>
@@ -377,51 +449,29 @@ export default function ReportsPage() {
 }
 
 // -------- pagination component --------
-function Pagination({
-  page,
-  totalPages,
-  onPage,
-}: {
-  page: number;
-  totalPages: number;
-  onPage: (p: number) => void;
-}) {
+function Pagination({ page, totalPages, onPage }: { page: number; totalPages: number; onPage: (p: number) => void }) {
   if (totalPages <= 1) return null;
 
   const pages: Array<number | "dots"> = [];
-
   const push = (v: number | "dots") => pages.push(v);
 
   push(1);
-
   if (page > 4) push("dots");
 
   const from = Math.max(2, page - 2);
   const to = Math.min(totalPages - 1, page + 2);
-
   for (let p = from; p <= to; p++) push(p);
 
   if (page < totalPages - 3) push("dots");
-
   if (totalPages > 1) push(totalPages);
 
   return (
     <div style={s.paginationRow}>
-      <button
-        type="button"
-        style={{ ...s.pageBtn, ...(page === 1 ? s.pageBtnDisabled : {}) }}
-        disabled={page === 1}
-        onClick={() => onPage(1)}
-      >
+      <button type="button" style={{ ...s.pageBtn, ...(page === 1 ? s.pageBtnDisabled : {}) }} disabled={page === 1} onClick={() => onPage(1)}>
         الأولى
       </button>
 
-      <button
-        type="button"
-        style={{ ...s.pageBtn, ...(page === 1 ? s.pageBtnDisabled : {}) }}
-        disabled={page === 1}
-        onClick={() => onPage(page - 1)}
-      >
+      <button type="button" style={{ ...s.pageBtn, ...(page === 1 ? s.pageBtnDisabled : {}) }} disabled={page === 1} onClick={() => onPage(page - 1)}>
         السابق
       </button>
 
@@ -432,12 +482,7 @@ function Pagination({
               …
             </span>
           ) : (
-            <button
-              key={p}
-              type="button"
-              onClick={() => onPage(p)}
-              style={{ ...s.numBtn, ...(p === page ? s.numBtnActive : {}) }}
-            >
+            <button key={p} type="button" onClick={() => onPage(p)} style={{ ...s.numBtn, ...(p === page ? s.numBtnActive : {}) }}>
               {p}
             </button>
           )
@@ -486,8 +531,6 @@ const tdCenter: React.CSSProperties = {
   textAlign: "center",
   whiteSpace: "nowrap",
 };
-
-const PRIMARY = "#152755";
 
 const s: Record<string, React.CSSProperties> = {
   page: {
@@ -695,11 +738,6 @@ const s: Record<string, React.CSSProperties> = {
     opacity: 0.6,
     padding: "0 6px",
     fontWeight: 900,
-    fontFamily: "cairo",
-  },
-
-  pageInfo: {
-    opacity: 0.75,
     fontFamily: "cairo",
   },
 };

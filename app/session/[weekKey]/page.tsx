@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   collection,
@@ -51,8 +51,6 @@ function toISODate(d: Date) {
 function getWeekMonday(now = new Date()) {
   const d = new Date(now);
   d.setHours(0, 0, 0, 0);
-
-  // go back to nearest Monday (today if Monday)
   const diffToMonday = (d.getDay() - MEETING_DAY + 7) % 7;
   d.setDate(d.getDate() - diffToMonday);
   return d;
@@ -64,23 +62,26 @@ function getDefaultWeekKey(now = new Date()) {
 
 // ✅ options: current ± 2 weeks  => 5 weeks
 function getWeekOptions(now = new Date()) {
-  const monday = getWeekMonday(now); // current monday 00:00
+  const monday = getWeekMonday(now);
   const keys: string[] = [];
-
   for (let offset = -2; offset <= 2; offset++) {
     const d = new Date(monday);
     d.setDate(d.getDate() + offset * 7);
     keys.push(toISODate(d));
   }
-
   return keys;
 }
+
+const PAGE_SIZE = 50;
+
+// session cache keys
+const WOMEN_CACHE_KEY = "women_active_cache_v1";
 
 export default function SessionPage() {
   const params = useParams();
   const weekKeyFromUrl = (params.weekKey as string) || "";
 
-  // week options (stable list per mount; لو عايزها تتحدث تلقائيًا كل يوم، نقدر نعملها بسهولة)
+  // week options (stable per mount)
   const weekOptions = useMemo(() => getWeekOptions(new Date()), []);
 
   // selected week
@@ -90,47 +91,118 @@ export default function SessionPage() {
 
   const [women, setWomen] = useState<Woman[]>([]);
   const [records, setRecords] = useState<Record<string, PresentRecord>>({});
-  const [loading, setLoading] = useState(true);
+
+  // split loaders: women + attendance
+  const [loadingWomen, setLoadingWomen] = useState(true);
+  const [loadingAtt, setLoadingAtt] = useState(true);
 
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "present" | "absent">(
-    "all"
-  );
-
+  const [statusFilter, setStatusFilter] = useState<"all" | "present" | "absent">("all");
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 50;
 
-  const attRef = useMemo(
-    () => doc(db, "attendance", selectedWeekKey),
-    [selectedWeekKey]
-  );
+  const [error, setError] = useState<string | null>(null);
 
+  // ✅ in-memory cache للـ attendance عشان الرجوع لنفس الأسبوع ما يعملش read جديد
+  const attendanceCache = useRef<Record<string, Record<string, PresentRecord>>>({});
+
+  const attRef = useMemo(() => doc(db, "attendance", selectedWeekKey), [selectedWeekKey]);
+
+  // ✅ 1) Load women مرة واحدة فقط + sessionStorage cache
   useEffect(() => {
-    async function load() {
-      setLoading(true);
+    async function loadWomenOnce() {
+      try {
+        setError(null);
+        setLoadingWomen(true);
 
-      // women
-      const qWomen = query(collection(db, "women"), where("active", "==", true));
-      const womenSnap = await getDocs(qWomen);
-      const list = womenSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Woman));
-      list.sort((a, b) => (a.code ?? 0) - (b.code ?? 0));
-      setWomen(list);
+        // cache first
+        try {
+          const raw = sessionStorage.getItem(WOMEN_CACHE_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw) as Woman[];
+            if (Array.isArray(parsed)) {
+              setWomen(parsed);
+              setLoadingWomen(false);
+              return;
+            }
+          }
+        } catch {}
 
-      // attendance doc
-      const attSnap = await getDoc(attRef);
+        const qWomen = query(collection(db, "women"), where("active", "==", true));
+        const womenSnap = await getDocs(qWomen);
 
-      if (!attSnap.exists()) {
-        await setDoc(attRef, { records: {}, updatedAt: serverTimestamp() });
-        setRecords({});
-      } else {
-        setRecords(attSnap.data().records || {});
+        const list = womenSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Woman));
+        list.sort((a, b) => (a.code ?? 0) - (b.code ?? 0));
+        setWomen(list);
+
+        try {
+          sessionStorage.setItem(WOMEN_CACHE_KEY, JSON.stringify(list));
+        } catch {}
+
+        setLoadingWomen(false);
+      } catch (e: any) {
+        setLoadingWomen(false);
+        setError(e?.message || "حدث خطأ أثناء تحميل السيدات");
       }
+    }
+    loadWomenOnce();
+  }, []);
 
-      setLoading(false);
+  // ✅ 2) Load attendance فقط عند تغيير selectedWeekKey
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAttendance() {
+      try {
+        setError(null);
+        setLoadingAtt(true);
+
+        // cache hit
+        const cached = attendanceCache.current[selectedWeekKey];
+        if (cached) {
+          if (!cancelled) {
+            setRecords(cached);
+            setLoadingAtt(false);
+          }
+          return;
+        }
+
+        const snap = await getDoc(attRef);
+
+        if (!snap.exists()) {
+          // ⚠️ بدل setDoc الإجباري: حاول، ولو اترفض اعرض رسالة واضحة
+          try {
+            await setDoc(attRef, { records: {}, updatedAt: serverTimestamp() });
+            const empty: Record<string, PresentRecord> = {};
+            if (!cancelled) {
+              setRecords(empty);
+              attendanceCache.current[selectedWeekKey] = empty;
+            }
+          } catch (e: any) {
+            // لو اليوزر مش مسموح له يكتب (rules)، اعرض رسالة
+            throw new Error("لا تملك صلاحية إنشاء سجل حضور لهذا الأسبوع. تأكد من صلاحيات Firestore/Role.");
+          }
+        } else {
+          const rec = (snap.data().records || {}) as Record<string, PresentRecord>;
+          if (!cancelled) {
+            setRecords(rec);
+            attendanceCache.current[selectedWeekKey] = rec;
+          }
+        }
+
+        if (!cancelled) setLoadingAtt(false);
+      } catch (e: any) {
+        if (!cancelled) {
+          setLoadingAtt(false);
+          setError(e?.message || "حدث خطأ أثناء تحميل الحضور");
+        }
+      }
     }
 
-    load();
-  }, [attRef]);
+    loadAttendance();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedWeekKey, attRef]);
 
   // reset page when filters change
   useEffect(() => {
@@ -160,11 +232,7 @@ export default function SessionPage() {
     });
   }, [searchedWomen, statusFilter, records]);
 
-  const totalPages = useMemo(
-    () => Math.max(1, Math.ceil(filteredWomen.length / PAGE_SIZE)),
-    [filteredWomen.length]
-  );
-
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(filteredWomen.length / PAGE_SIZE)), [filteredWomen.length]);
   const currentPage = Math.min(page, totalPages);
 
   const pageItems = useMemo(() => {
@@ -173,23 +241,27 @@ export default function SessionPage() {
   }, [filteredWomen, currentPage]);
 
   async function markPresent(womanId: string) {
+    const now = new Date();
+
     // optimistic
-    setRecords((prev) => ({
-      ...prev,
-      [womanId]: { markedAt: new Date() },
-    }));
+    setRecords((prev) => {
+      const next = { ...prev, [womanId]: { markedAt: now } };
+      attendanceCache.current[selectedWeekKey] = next; // ✅ update cache
+      return next;
+    });
 
     await updateDoc(attRef, {
-      [`records.${womanId}`]: { markedAt: new Date() },
+      [`records.${womanId}`]: { markedAt: now },
       updatedAt: serverTimestamp(),
     });
   }
 
   async function undoPresent(womanId: string) {
     setRecords((prev) => {
-      const copy = { ...prev };
-      delete copy[womanId];
-      return copy;
+      const next = { ...prev };
+      delete next[womanId];
+      attendanceCache.current[selectedWeekKey] = next; // ✅ update cache
+      return next;
     });
 
     await updateDoc(attRef, {
@@ -198,7 +270,47 @@ export default function SessionPage() {
     });
   }
 
+  const loading = loadingWomen || loadingAtt;
   if (loading) return <ChurchLoader text="جاري التحميل  ..." />;
+
+  if (error) {
+    return (
+      <div dir="rtl" style={{ padding: 16, maxWidth: 900, margin: "0 auto" }}>
+        <div
+          style={{
+            background: "#fff1f2",
+            border: "1px solid #fecaca",
+            padding: 14,
+            borderRadius: 14,
+            fontFamily: "cairo",
+          }}
+        >
+          <div style={{ fontWeight: 900, marginBottom: 8 }}>حدث خطأ</div>
+          <div style={{ opacity: 0.85, marginBottom: 12 }}>{error}</div>
+
+          <button
+            type="button"
+            onClick={() => {
+              delete attendanceCache.current[selectedWeekKey];
+              setLoadingAtt(true);
+              setSelectedWeekKey((k) => k);
+            }}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 12,
+              border: "1px solid #ddd",
+              background: "white",
+              fontWeight: 900,
+              cursor: "pointer",
+              fontFamily: "cairo",
+            }}
+          >
+            إعادة المحاولة
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const total = women.length;
   const shown = pageItems.length;
@@ -212,9 +324,7 @@ export default function SessionPage() {
           <div>
             <div style={s.badge}>تسجيل حضور</div>
             <h2 style={s.title}>اجتماع يوم الإثنين — {selectedWeekKey}</h2>
-            <div style={s.subTitle}>
-              سجّل الحضور فقط، والباقي يعتبر غياب بشكل تلقائي.
-            </div>
+            <div style={s.subTitle}>سجّل الحضور فقط، والباقي يعتبر غياب بشكل تلقائي.</div>
           </div>
 
           <div style={s.statsRow}>
@@ -306,7 +416,7 @@ export default function SessionPage() {
               </div>
             </div>
 
-            <button onClick={() => setSearch("")} style={s.secondaryBtn} disabled={!search}>
+            <button onClick={() => setSearch("")} style={s.secondaryBtn} disabled={!search} type="button">
               مسح
             </button>
           </div>
@@ -352,20 +462,16 @@ export default function SessionPage() {
                   </div>
 
                   <div style={{ textAlign: "left" }}>
-                    {isPresent ? (
-                      <span style={s.badgePresent}>حاضر</span>
-                    ) : (
-                      <span style={s.badgeAbsent}>غير مسجل</span>
-                    )}
+                    {isPresent ? <span style={s.badgePresent}>حاضر</span> : <span style={s.badgeAbsent}>غير مسجل</span>}
                   </div>
 
                   <div style={{ textAlign: "left" }}>
                     {!isPresent ? (
-                      <button style={s.primaryBtn} onClick={() => markPresent(w.id)}>
+                      <button style={s.primaryBtn} onClick={() => markPresent(w.id)} type="button">
                         تسجيل حضور
                       </button>
                     ) : (
-                      <button style={s.dangerBtn} onClick={() => undoPresent(w.id)}>
+                      <button style={s.dangerBtn} onClick={() => undoPresent(w.id)} type="button">
                         إلغاء
                       </button>
                     )}
@@ -400,7 +506,6 @@ function getPageNumbers(current: number, total: number) {
   const end = Math.min(total, current + delta);
 
   for (let i = start; i <= end; i++) range.push(i);
-
   if (!range.includes(1)) range.unshift(1);
   if (!range.includes(total)) range.push(total);
 
@@ -434,7 +539,6 @@ function Pagination({
   onGo: (p: number) => void;
 }) {
   if (totalPages <= 1) return null;
-
   const pages = getPageNumbers(currentPage, totalPages);
 
   return (
@@ -474,15 +578,8 @@ function Pagination({
 }
 
 const s: Record<string, React.CSSProperties> = {
-  page: {
-    minHeight: "100vh",
-    background: "#f6f7fb",
-    padding: 16,
-  },
-  container: {
-    maxWidth: 1100,
-    margin: "0 auto",
-  },
+  page: { minHeight: "100vh", background: "#f6f7fb", padding: 16 },
+  container: { maxWidth: 1100, margin: "0 auto" },
 
   headerCard: {
     background: "white",
@@ -507,25 +604,10 @@ const s: Record<string, React.CSSProperties> = {
     marginBottom: 8,
     fontFamily: "cairo",
   },
-  title: {
-    margin: 0,
-    fontSize: 22,
-    fontWeight: 900,
-    fontFamily: "cairo",
-  },
-  subTitle: {
-    marginTop: 6,
-    opacity: 0.7,
-    fontSize: 13,
-    lineHeight: 1.6,
-    fontFamily: "cairo",
-  },
+  title: { margin: 0, fontSize: 22, fontWeight: 900, fontFamily: "cairo" },
+  subTitle: { marginTop: 6, opacity: 0.7, fontSize: 13, lineHeight: 1.6, fontFamily: "cairo" },
 
-  statsRow: {
-    display: "flex",
-    gap: 10,
-    flexWrap: "wrap",
-  },
+  statsRow: { display: "flex", gap: 10, flexWrap: "wrap" },
   stat: {
     background: "#fafafa",
     border: "1px solid #eee",
@@ -547,13 +629,7 @@ const s: Record<string, React.CSSProperties> = {
     marginTop: 12,
   },
 
-  label: {
-    display: "block",
-    fontSize: 12,
-    opacity: 0.75,
-    marginBottom: 6,
-    fontFamily: "cairo",
-  },
+  label: { display: "block", fontSize: 12, opacity: 0.75, marginBottom: 6, fontFamily: "cairo" },
   input: {
     width: "85%",
     padding: "10px 12px",
@@ -563,12 +639,7 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: 14,
     fontFamily: "cairo",
   },
-  searchRow: {
-    display: "flex",
-    gap: 10,
-    alignItems: "flex-end",
-    flexWrap: "wrap",
-  },
+  searchRow: { display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" },
 
   listHeader: {
     display: "grid",
@@ -589,20 +660,9 @@ const s: Record<string, React.CSSProperties> = {
     alignItems: "center",
     fontFamily: "cairo",
   },
-  rowPresent: {
-    background: "#ecfdf5",
-    borderRadius: 12,
-    margin: "6px 0",
-    border: "1px solid #bbf7d0",
-  },
+  rowPresent: { background: "#ecfdf5", borderRadius: 12, margin: "6px 0", border: "1px solid #bbf7d0" },
 
-  nameCell: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    fontSize: 15,
-    fontWeight: 800,
-  },
+  nameCell: { display: "flex", alignItems: "center", gap: 10, fontSize: 15, fontWeight: 800 },
   codePill: {
     display: "inline-block",
     padding: "6px 10px",
@@ -692,13 +752,7 @@ const s: Record<string, React.CSSProperties> = {
     transition: "all 180ms ease",
   },
 
-  filterRow: {
-    marginTop: 10,
-    display: "flex",
-    gap: 8,
-    flexWrap: "wrap",
-  },
-
+  filterRow: { marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" },
   chip: {
     padding: "8px 12px",
     borderRadius: 999,
@@ -708,12 +762,7 @@ const s: Record<string, React.CSSProperties> = {
     fontWeight: 900,
     fontFamily: "cairo",
   },
-
-  chipActive: {
-    background: "#111827",
-    color: "white",
-    border: "1px solid #111827",
-  },
+  chipActive: { background: "#111827", color: "white", border: "1px solid #111827" },
 
   btnGhostSmall: {
     padding: "8px 12px",
@@ -728,12 +777,7 @@ const s: Record<string, React.CSSProperties> = {
   paginationLeft: { display: "flex", gap: 8, flexWrap: "wrap" },
   paginationRight: { display: "flex", gap: 8, flexWrap: "wrap" },
 
-  pages: {
-    display: "flex",
-    gap: 6,
-    flexWrap: "wrap",
-    justifyContent: "center",
-  },
+  pages: { display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center" },
 
   pageNumber: {
     minWidth: 38,
@@ -746,10 +790,5 @@ const s: Record<string, React.CSSProperties> = {
     fontWeight: 900,
     fontFamily: "cairo",
   },
-
-  pageNumberActive: {
-    background: "#111827",
-    color: "white",
-    border: "1px solid #111827",
-  },
+  pageNumberActive: { background: "#111827", color: "white", border: "1px solid #111827" },
 };
