@@ -36,6 +36,8 @@ type CsvRow = {
   active?: string | boolean;
 };
 
+const WOMEN_CACHE_KEY = "women_active_cache_v1";
+
 function normalizeArabic(s: string) {
   return s
     .trim()
@@ -158,6 +160,13 @@ export default function WomenPage() {
     loadWomen();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    try {
+      const activeWomen = women.filter((w) => w.active);
+      sessionStorage.setItem(WOMEN_CACHE_KEY, JSON.stringify(activeWomen));
+    } catch {}
+  }, [women]);
 
   // ------------------- computed -------------------
   const stats = useMemo(() => {
