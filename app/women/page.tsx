@@ -53,8 +53,11 @@ function parseCode(v: unknown): number | null {
   return Math.floor(n);
 }
 
-function downloadTextFile(filename: string, content: string, mime = "text/plain;charset=utf-8") {
-  const blob = new Blob([content], { type: mime });
+function downloadCsvUtf8Bom(filename: string, csv: string) {
+  // add UTF-8 BOM so Excel reads Arabic correctly
+  const BOM = "\uFEFF";
+  const blob = new Blob([BOM + csv], { type: "text/csv;charset=utf-8" });
+
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -485,8 +488,8 @@ export default function WomenPage() {
     }));
 
     const csv = Papa.unparse(rows, { quotes: false });
-    const filename = `women_export_${new Date().toISOString().slice(0, 10)}.csv`;
-    downloadTextFile(filename, csv, "text/csv;charset=utf-8");
+    const filename = `Women_${new Date().toISOString().slice(0, 10)}.csv`;
+    downloadCsvUtf8Bom(filename, csv);
   }
 
   // ------------------- UI states -------------------
